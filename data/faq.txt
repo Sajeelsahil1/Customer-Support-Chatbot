@@ -1,0 +1,14 @@
+Q: How do I track my order?
+A: You can track your order by visiting the 'Track Order' page on our website and entering your order ID and email address. You will also receive email updates with a tracking link once your order has shipped.
+
+Q: What is your refund policy?
+A: We offer a 30-day no-questions-asked refund policy. If you are not satisfied with your purchase, you can return it within 30 days of receipt for a full refund. Please ensure the item is in its original condition.
+
+Q: How do I request a refund?
+A: To request a refund, please contact our support team at support@company.com with your order number and the reason for your return. We will guide you through the process.
+
+Q: How do I reset my password?
+A: If you have forgotten your password, go to the login page and click the 'Forgot Password' link. You will be asked to enter your email address, and we will send you a link to reset your password.
+
+Q: Do you ship internationally?
+A: Yes, we ship to over 50 countries. International shipping costs and delivery times vary by destination. You can see the full list of countries and shipping rates at checkout.

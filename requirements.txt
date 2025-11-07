@@ -1,0 +1,10 @@
+streamlit
+langchain-chroma
+langchain-huggingface
+langchain-google-genai
+langchain-text-splitters
+langchain-community
+langchain-core
+pydantic
+sentence-transformers
+protobuf==3.20.3
