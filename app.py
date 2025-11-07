@@ -26,26 +26,60 @@ EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 # --- 3. CACHED FUNCTIONS TO LOAD MODELS ---
 @st.cache_resource
 def load_llm():
-    # Keeping your "stunner" model
-    return ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", temperature=0)
+    return ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0)
+
+# --- NEW: Function to create the DB (copied from v1) ---
+def create_vector_db():
+    """Loads docs, splits, embeds, and stores them in Chroma."""
+    print("No database found. Creating a new one...")
+    loader = DirectoryLoader(DATA_PATH, glob="*.txt", loader_cls=TextLoader)
+    documents = loader.load()
+    
+    if not documents:
+        print("Error: No documents found in ./data folder.")
+        st.error("Error: No documents found in ./data folder. Make sure faq.txt is in the data folder on GitHub.")
+        return None
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000, 
+        chunk_overlap=200
+    )
+    chunks = text_splitter.split_documents(documents)
+
+    embedding_model = HuggingFaceEmbeddings(
+        model_name=EMBEDDING_MODEL_NAME,
+        model_kwargs={'device': 'cpu'} 
+    )
+
+    print("Creating and persisting vector database...")
+    vector_db = Chroma.from_documents(
+        documents=chunks,
+        embedding=embedding_model,
+        persist_directory=DB_PATH
+    )
+    print("Vector database created successfully.")
+    return vector_db
 
 @st.cache_resource
 def load_retriever():
+    # --- UPDATED: Check if DB exists and create if not ---
     if not os.path.exists(DB_PATH):
-        st.error("Chroma DB not found. Please run one of the v1-v4 scripts first to create it.")
-        return None
+        vector_db = create_vector_db()
+        if vector_db is None:
+            return None # Stop if creation failed
+    else:
+        print("Loading existing database...")
+        embedding_model = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={'device': 'cpu'})
+        vector_db = Chroma(persist_directory=DB_PATH, embedding_function=embedding_model)
     
-    embedding_model = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME, model_kwargs={'device': 'cpu'})
-    vector_db = Chroma(persist_directory=DB_PATH, embedding_function=embedding_model)
     return vector_db.as_retriever(search_kwargs={"k": 2})
 
 LLM = load_llm()
 RETRIEVER = load_retriever()
 
 # --- 4. SIMULATED WEBHOOKS / API FUNCTIONS ---
-# (Your working functions)
+# (All other code is identical to your working version)
 def track_order_api(order_id: str) -> str:
-    """Simulates calling a CRM API to get order status."""
     print(f"\n[API CALL] Tracking order_id: {order_id}")
     if order_id == "12345":
         return "Status: Shipped. Expected delivery: Nov 10, 2025."
@@ -55,7 +89,6 @@ def track_order_api(order_id: str) -> str:
         return f"Status: Order ID '{order_id}' not found."
 
 def get_refund_status_api(order_id: str) -> str:
-    """Simulates calling a payments API to get refund status."""
     print(f"\n[API CALL] Checking refund status for order_id: {order_id}")
     if order_id == "12345":
         return "Status: Refund approved. Will be processed in 3-5 business days."
@@ -65,14 +98,10 @@ def get_refund_status_api(order_id: str) -> str:
         return f"Status: Order ID '{order_id}' not found."
 
 def escalate_to_human_api(chat_history: list) -> str:
-    """Simulates escalating the chat to a human agent."""
     print("\n[API CALL] Escalating to human agent...")
     return "I understand. I am transferring you to a human agent now. They will have your chat history and will be with you shortly."
 
 # --- 5. TOOL-SPECIFIC CHAINS ---
-# (Your working chains)
-
-# --- Tool 1: Order Tracking ---
 class OrderInfo(BaseModel):
     order_id: str = Field(description="The user's order ID, e.g., '12345' or 'A-987'")
 
@@ -89,7 +118,6 @@ def create_order_tracking_chain():
     )
     return order_chain
 
-# --- Tool 2: Refund Status ---
 def create_refund_status_chain():
     structured_llm = LLM.with_structured_output(OrderInfo)
     extraction_prompt = ChatPromptTemplate.from_messages([
@@ -103,8 +131,6 @@ def create_refund_status_chain():
     )
     return refund_chain
 
-# --- Tool 3: FAQ Conversational Chain ---
-# (Your working `RunnablePassthrough.assign` version)
 def create_faq_chain(retriever):
     rephrasing_prompt = ChatPromptTemplate.from_messages([
         MessagesPlaceholder(variable_name="chat_history"),
@@ -130,15 +156,11 @@ def create_faq_chain(retriever):
     
     return conversational_rag_chain
 
-# --- Tool 4: Human Handover Chain ---
 def create_human_handover_chain():
     return RunnableLambda(lambda x: escalate_to_human_api(x['chat_history']))
 
 # --- 6. THE ROUTER: The "Brain" of the Bot ---
-# (Your working, strict router)
 def create_router_chain(faq_chain, order_chain, refund_chain, handover_chain):
-    """Creates the main router chain that decides which tool to use."""
-    
     prompt = ChatPromptTemplate.from_messages([
         ("system", """
 You are a strict and expert router. You must classify the user's input into one of the following categories.
@@ -163,7 +185,7 @@ You must output *only* the category name and nothing else.
             return refund_chain
         if "HUMAN_HANDOVER" in topic:
             return handover_chain
-        else: # Default to FAQ
+        else:
             return faq_chain
 
     main_chain = {
@@ -179,6 +201,7 @@ You must output *only* the category name and nothing else.
 @st.cache_resource
 def get_chatbot():
     if RETRIEVER is None:
+        st.error("Retriever could not be initialized. Please check DB path and data folder.")
         return None
         
     faq_chain = create_faq_chain(RETRIEVER)
@@ -193,56 +216,43 @@ def get_chatbot():
 full_chatbot = get_chatbot()
 
 # --- 8. STREAMLIT UI LOGIC ---
-# --- THIS IS THE ONLY SECTION THAT HAS CHANGED ---
-
 st.title("🚀 Customer Support Chatbot")
 st.caption("I can answer FAQs, track orders, check refunds, and escalate to a human.")
 
-# Initialize chat history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = [
         AIMessage(content="Hello! How can I help you today?")
     ]
 
-# Display past messages
 for msg in st.session_state.chat_history:
     if isinstance(msg, AIMessage):
         st.chat_message("assistant").write(msg.content)
     elif isinstance(msg, HumanMessage):
         st.chat_message("user").write(msg.content)
 
-# --- NEW: Refactored function to handle input ---
 def handle_user_input(prompt_text):
-    """
-    Handles both typed and button-clicked user input.
-    """
     if not full_chatbot:
-        st.error("Chatbot is not initialized. Please ensure the Chroma DB exists.")
+        st.error("Chatbot is not initialized. Please ensure the Chroma DB exists and the data folder is correct.")
         return
 
-    # Add user message to UI and history
     st.chat_message("user").write(prompt_text)
     st.session_state.chat_history.append(HumanMessage(content=prompt_text))
     
-    # Get bot response
     try:
         response = full_chatbot.invoke({
             "chat_history": st.session_state.chat_history,
             "input": prompt_text
         })
         
-        # Add bot response to UI and history
         st.chat_message("assistant").write(response)
         st.session_state.chat_history.append(AIMessage(content=response))
         
     except Exception as e:
         st.error(f"An error occurred: {e}")
         
-    # Limit history size
     if len(st.session_state.chat_history) > 20:
         st.session_state.chat_history = st.session_state.chat_history[-20:]
 
-# --- NEW: Display suggested prompts as buttons ---
 st.divider()
 st.caption("Or try a suggested prompt:")
 
@@ -256,9 +266,8 @@ cols = st.columns(len(suggested_prompts))
 for i, suggestion in enumerate(suggested_prompts):
     if cols[i].button(suggestion, use_container_width=True):
         handle_user_input(suggestion)
-        st.rerun() # Rerun the script to show the new messages immediately
+        st.rerun() 
 
-# --- UPDATED: Get new user input from the text box ---
 if prompt := st.chat_input("What's on your mind?"):
-    handle_user_input(prompt) # Call the same handler function
-    st.rerun() # Force a rerun to maintain state consistency
+    handle_user_input(prompt)
+    st.rerun()
