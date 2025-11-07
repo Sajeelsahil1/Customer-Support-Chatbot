@@ -26,7 +26,7 @@ EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
 # --- 3. CACHED FUNCTIONS TO LOAD MODELS ---
 @st.cache_resource
 def load_llm():
-    return ChatGoogleGenerativeAI(model="models/gemini-2.5-pro", temperature=0)
+    return ChatGoogleGenerativeAI(model="models/gemini-2.5-flash", temperature=0)
 
 # --- NEW: Function to create the DB (copied from v1) ---
 def create_vector_db():
